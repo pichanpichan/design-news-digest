@@ -186,71 +186,54 @@ def json_try_parse(text):
     return None
 
 def translate_articles(candidates):
-    """Call DeepSeek to translate & write summaries/excerpts for all candidates."""
+    """Call DeepSeek per-article to translate & write summaries/excerpts."""
     if not candidates:
         return []
 
-    BATCH_SIZE = 4  # 4篇/批，每篇约500字输出，总token在DeepSeek输出限制以内
     results = []
+    for i, c in enumerate(candidates):
+        log(f"  翻译 ({i+1}/{len(candidates)}): {c['title'][:40]}...")
 
-    for batch_start in range(0, len(candidates), BATCH_SIZE):
-        batch = candidates[batch_start:batch_start + BATCH_SIZE]
-        log(f"  翻译批次 {batch_start//BATCH_SIZE + 1}: 文章 {batch_start+1}-{batch_start+len(batch)}")
+        prompt = f"""请翻译以下设计文章。保留关键品牌/人名/项目名。
 
-        items_json = []
-        for j, c in enumerate(batch):
-            items_json.append({
-                "index": batch_start + j,
-                "title_en": c["title"],
-                "description_en": c["desc"][:300] if c.get("desc") else "",
-            })
+1. 中文标题
+2. 中文摘要（35-70汉字），说明这篇在讲什么、为什么值得关注
+3. 中文摘录（200-500汉字），展开介绍核心观点、设计亮点和判断价值
 
-        prompt = f"""以下是从设计网站收集的 {len(batch)} 篇文章（英文）。请对每篇文章：
-
-1. 翻译标题为中文，保留关键品牌/人名/项目名
-2. 写一句中文摘要（35-70汉字），说明这篇在讲什么、为什么值得关注
-3. 写一段中文摘录（200-500汉字），展开介绍核心观点、设计亮点和判断价值
-
-要求：不要以"值得一看"、"不容错过"等套路句式结尾。每篇收尾要自然、言之有物。
+要求：不要以"值得一看"、"不容错过"等套路句式结尾。收尾要自然、言之有物。
 
 返回 JSON 格式:
 {{
-  "articles": [
-    {{
-      "index": 0,
-      "title_cn": "...",
-      "summary_cn": "...",
-      "excerpt_cn": "..."
-    }},
-    ...
-  ]
+  "index": {i},
+  "title_cn": "...",
+  "summary_cn": "...",
+  "excerpt_cn": "..."
 }}
 
-原文数据：
-{json.dumps(items_json, ensure_ascii=False, indent=2)}"""
+原文标题: {c['title']}
+原文描述: {(c.get('desc') or '')[:300]}"""
 
         result = call_deepseek(prompt)
         if not result:
-            log(f"  ❌ 批次 {batch_start//BATCH_SIZE + 1} 翻译失败")
+            log(f"  ✗ 第{i+1}篇翻译失败，使用原文标题")
             continue
 
         try:
             parsed = json_try_parse(result)
             if parsed is None:
-                log(f"  ❌ 批次 {batch_start//BATCH_SIZE + 1} 解析失败，全文日志如下:")
-                log(f"  RAW: {result[:300]}")
+                log(f"  ✗ 第{i+1}篇解析失败，使用原文标题")
                 continue
-            translated = parsed.get("articles", [])
-            results.extend(translated)
-            log(f"  ✓ 批次 {batch_start//BATCH_SIZE + 1} 完成: {len(translated)} 篇")
+            parsed["index"] = i  # ensure index
+            results.append(parsed)
+            log(f"  ✓ 第{i+1}篇完成")
         except Exception as e:
-            log(f"  ❌ 批次 {batch_start//BATCH_SIZE + 1} 异常: {e}")
+            log(f"  ✗ 第{i+1}篇异常: {e}")
             continue
 
     if results:
-        log(f"  ✓ DeepSeek 翻译完成: {len(results)} 篇")
+        log(f"  ✓ DeepSeek 翻译完成: {len(results)}/{len(candidates)} 篇")
     else:
-        log("  ❌ 所有批次的翻译均失败")
+        log("  ❌ 所有翻译均失败")
     return results
 
 # ── 主流程 ──
