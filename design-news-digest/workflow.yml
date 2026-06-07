@@ -19,19 +19,22 @@ jobs:
           python-version: "3.11"
 
       - name: 安装依赖
+        working-directory: ./design-news-digest
         run: |
           pip install --upgrade pip
           pip install Pillow feedparser
 
       - name: 运行发现 + 翻译 + 发送
+        working-directory: ./design-news-digest
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DESIGN_DIGEST_TO_ADDRS: ${{ secrets.DESIGN_DIGEST_TO_ADDRS || 'isawuonce@qq.com,isawuonce@gmail.com' }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS || 'vgqknoqgxkmebhia' }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
         run: |
           python3 discover_and_translate.py
 
       - name: 提交图片缓存更新
+        working-directory: ./design-news-digest
         run: |
           git config user.name "digest-bot"
           git config user.email "bot@localhost"
