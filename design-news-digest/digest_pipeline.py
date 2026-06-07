@@ -892,8 +892,10 @@ def send_email(html_content, editor, grouped, subject=None):
     msg.attach(msg_related)
 
     print(f"  📧 发送: {attached} 张 CID 图片, {len(all_arts)} 篇文章")
-    # Try port 465 (SSL) first, fall back to 587 (STARTTLS)
-    for port, use_ssl in [(465, True), (587, False)]:
+    # Try configured port first, then fallback
+    alt_port = 587 if SMTP_PORT == 465 else 465
+    for port in [SMTP_PORT, alt_port]:
+        use_ssl = (port == 465)
         try:
             if use_ssl:
                 server = smtplib.SMTP_SSL(SMTP_HOST, port, timeout=SMTP_TIMEOUT_SECONDS)
