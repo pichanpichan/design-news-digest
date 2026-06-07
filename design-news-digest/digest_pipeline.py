@@ -51,7 +51,11 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_PATH = os.path.join(SCRIPT_DIR, "img_cache.json")
 FAIL_CACHE_PATH = os.path.join(SCRIPT_DIR, "img_failures.json")
 OUTPUT_HTML = os.environ.get("DESIGN_DIGEST_OUTPUT_HTML", os.path.join(SCRIPT_DIR, "design_digest_latest.html"))
+OUTPUT_READER_HTML = os.environ.get("DESIGN_DIGEST_OUTPUT_READER_HTML",
+    os.path.join(SCRIPT_DIR, "design_digest_reader.html"))
 LOCK_PATH = os.path.join(SCRIPT_DIR, ".digest_pipeline.lock")
+IMAGES_DIR = os.path.join(SCRIPT_DIR, "images")
+IMAGE_BASE_URL = os.environ.get("DESIGN_DIGEST_IMAGE_BASE_URL", "")  # 如: https://raw.githubusercontent.com/.../images
 
 SMTP_HOST = os.environ.get("DESIGN_DIGEST_SMTP_HOST", "smtp.qq.com")
 SMTP_PORT = int(os.environ.get("DESIGN_DIGEST_SMTP_PORT", "465"))
@@ -285,7 +289,7 @@ def clean_img_url(url):
     return url
 
 def process_one_image(article_id, img_url):
-    """下载单张图片 → 裁切3:2 → JPEG压缩 → base64"""
+    """下载单张图片 → 裁切3:2 → JPEG压缩 → base64 ∕ 文件"""
     try:
         img_url = clean_img_url(img_url)
         raw = download_image(img_url)
@@ -297,7 +301,15 @@ def process_one_image(article_id, img_url):
             img = img.convert('RGB')
         buf = io.BytesIO()
         img.save(buf, 'JPEG', quality=75, optimize=True)
-        b64 = base64.b64encode(buf.getvalue()).decode()
+        jpeg_bytes = buf.getvalue()
+        b64 = base64.b64encode(jpeg_bytes).decode()
+        # 保存文件用于公开 URL 托管
+        try:
+            os.makedirs(IMAGES_DIR, exist_ok=True)
+            with open(os.path.join(IMAGES_DIR, f"{article_id}.jpg"), "wb") as f:
+                f.write(jpeg_bytes)
+        except OSError:
+            pass
         return (article_id, f"data:image/jpeg;base64,{b64}")
     except Exception as e:
         print(f"    ✗ {article_id}: {e}")
@@ -515,7 +527,7 @@ def build_html(editor, grouped):
                         <tr>
                             <td>
                                 <a href="{u}" style="display:block;text-decoration:none;">
-                                    <img src="cid:{aid}" alt="{title}" style="width:100%;height:auto;display:block;border:0;outline:none;text-decoration:none;">
+                                    <img src="{IMAGE_BASE_URL + '/' + aid + '.jpg' if IMAGE_BASE_URL else 'cid:' + aid}" alt="{title}" style="width:100%;height:auto;display:block;border:0;outline:none;text-decoration:none;">
                                 </a>
                             </td>
                         </tr>
@@ -591,9 +603,6 @@ def build_html(editor, grouped):
 </html>'''
 
 # ═══════════════════ 5. 交互式阅读页面 ═══════════════════
-
-OUTPUT_READER_HTML = os.environ.get("DESIGN_DIGEST_OUTPUT_READER_HTML",
-    os.path.join(SCRIPT_DIR, "design_digest_reader.html"))
 
 def build_reader_html(editor, grouped, img_cache):
     """生成单文件交互式阅读页面，文章数据以 JSON 嵌入，JS 实现详情/返回功能"""

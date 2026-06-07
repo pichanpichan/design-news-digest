@@ -9,6 +9,8 @@ on:
 jobs:
   digest:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -33,18 +35,17 @@ jobs:
           DESIGN_DIGEST_SMTP_HOST: smtp.gmail.com
           DESIGN_DIGEST_SMTP_PORT: 587
           DESIGN_DIGEST_SMTP_USER: isawuonce@gmail.com
+          DESIGN_DIGEST_IMAGE_BASE_URL: "https://raw.githubusercontent.com/pichanpichan/design-news-digest/main/design-news-digest/images"
         run: |
           python3 discover_and_translate.py
 
-      # 图片缓存提交（非关键步骤，失败不影响邮件发送）
-      - name: 提交图片缓存更新
-        if: always()
+      - name: 提交图片和缓存
         working-directory: ./design-news-digest
         run: |
           git config user.name "digest-bot"
           git config user.email "bot@localhost"
-          git add img_cache.json img_failures.json
+          git add images/ img_cache.json img_failures.json
           git diff --cached --quiet || {
-            git commit -m "auto: update img cache $(date +%Y-%m-%d)"
-            git push 2>/dev/null || echo "⚠ 缓存提交跳过（权限不足，不影响邮件）"
+            git commit -m "auto: update images and cache $(date +%Y-%m-%d)"
+            git push
           }
