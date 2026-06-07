@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.DS_Store
+articles.json
+design_digest_latest.html
+design_digest_reader.html
+discovery.log
+.digest_pipeline.lock

@@ -1,0 +1,40 @@
+name: 设计资讯摘要
+
+on:
+  schedule:
+    # 每 3 天 9:00 CST = UTC 1:00
+    - cron: "0 1 */3 * *"
+  workflow_dispatch:  # 也可手动触发
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install Pillow feedparser
+
+      - name: 运行发现 + 翻译 + 发送
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DESIGN_DIGEST_TO_ADDRS: ${{ secrets.DESIGN_DIGEST_TO_ADDRS || 'isawuonce@qq.com,isawuonce@gmail.com' }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS || 'vgqknoqgxkmebhia' }}
+        run: |
+          python3 discover_and_translate.py
+
+      - name: 提交图片缓存更新
+        run: |
+          git config user.name "digest-bot"
+          git config user.email "bot@localhost"
+          git add img_cache.json img_failures.json
+          git diff --cached --quiet || git commit -m "auto: update img cache $(date +%Y-%m-%d)"
+          git push
