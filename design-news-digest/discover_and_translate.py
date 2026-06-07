@@ -170,6 +170,19 @@ def call_deepseek(prompt, max_tokens=3000):
         log(f"  ❌ DeepSeek API 失败: {str(e)[:100]}")
         return None
 
+def json_try_parse(text):
+    """尝试解析 JSON，如果失败则尝试修复常见问题。"""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # Repair: replace problematic unescaped chars
+    text = re.sub(r'(?<!\\)"', '"', text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
 def translate_articles(candidates):
     """Call DeepSeek to translate & write summaries/excerpts for all candidates."""
     if not candidates:
@@ -212,12 +225,15 @@ def translate_articles(candidates):
         return []
 
     try:
-        parsed = json.loads(result)
+        parsed = json_try_parse(result)
+        if parsed is None:
+            log(f"  ❌ 翻译结果解析失败，尝试修复后仍失败")
+            return []
         translated = parsed.get("articles", [])
         log(f"  ✓ DeepSeek 翻译完成: {len(translated)} 篇")
         return translated
-    except json.JSONDecodeError as e:
-        log(f"  ❌ 翻译结果解析失败: {e}")
+    except Exception as e:
+        log(f"  ❌ 翻译处理异常: {e}")
         return []
 
 # ── 主流程 ──
