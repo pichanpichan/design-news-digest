@@ -880,7 +880,10 @@ def send_email(html_content, editor, grouped, subject=None):
         all_arts.extend(v)
 
     attached = 0
+    skip_cid = bool(IMAGE_BASE_URL)  # 使用公开 URL 时跳过 CID 附件
     for a in all_arts:
+        if skip_cid:
+            continue
         data = get_binary(a["id"])
         if data:
             try:
