@@ -144,7 +144,7 @@ def scrape_itsnicethat():
     return entries
 
 # ── DeepSeek 翻译 ──
-def call_deepseek(prompt, max_tokens=3000):
+def call_deepseek(prompt, max_tokens=8192):
     if not DEEPSEEK_API_KEY:
         log("  ❌ DEEPSEEK_API_KEY 未设置")
         return None
@@ -176,12 +176,14 @@ def json_try_parse(text):
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # Repair: replace problematic unescaped chars
-    text = re.sub(r'(?<!\\)"', '"', text)
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return None
+    # Repair: try to truncate at last complete object
+    for i in range(len(text), 0, -1):
+        if text[i-1] == '}':
+            try:
+                return json.loads(text[:i])
+            except json.JSONDecodeError:
+                continue
+    return None
 
 def translate_articles(candidates):
     """Call DeepSeek to translate & write summaries/excerpts for all candidates."""
