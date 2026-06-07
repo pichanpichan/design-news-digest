@@ -53,8 +53,8 @@ FAIL_CACHE_PATH = os.path.join(SCRIPT_DIR, "img_failures.json")
 OUTPUT_HTML = os.environ.get("DESIGN_DIGEST_OUTPUT_HTML", os.path.join(SCRIPT_DIR, "design_digest_latest.html"))
 LOCK_PATH = os.path.join(SCRIPT_DIR, ".digest_pipeline.lock")
 
-SMTP_HOST = "smtp.qq.com"
-SMTP_PORT = 465
+SMTP_HOST = os.environ.get("DESIGN_DIGEST_SMTP_HOST", "smtp.qq.com")
+SMTP_PORT = int(os.environ.get("DESIGN_DIGEST_SMTP_PORT", "465"))
 SMTP_USER = os.environ.get("DESIGN_DIGEST_SMTP_USER", "isawuonce@qq.com")
 SMTP_PASS = os.environ.get("DESIGN_DIGEST_SMTP_PASS", "")
 if not SMTP_PASS:

@@ -30,6 +30,9 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DESIGN_DIGEST_TO_ADDRS: ${{ secrets.DESIGN_DIGEST_TO_ADDRS || 'isawuonce@qq.com,isawuonce@gmail.com' }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: 587
+          SMTP_USER: isawuonce@gmail.com
         run: |
           python3 discover_and_translate.py
 
