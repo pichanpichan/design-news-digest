@@ -237,7 +237,8 @@ def translate_articles(candidates):
         try:
             parsed = json_try_parse(result)
             if parsed is None:
-                log(f"  ❌ 批次 {batch_start//BATCH_SIZE + 1} 解析失败")
+                log(f"  ❌ 批次 {batch_start//BATCH_SIZE + 1} 解析失败，全文日志如下:")
+                log(f"  RAW: {result[:300]}")
                 continue
             translated = parsed.get("articles", [])
             results.extend(translated)
