@@ -384,13 +384,12 @@ def main():
     env = os.environ.copy()
     env["DESIGN_DIGEST_NOW"] = time.strftime("%Y-%m-%d")
     result = subprocess.run(
-        [sys.executable, pipeline, ARTICLES_PATH],
+        [sys.executable, pipeline, ARTICLES_PATH, "--no-send"],
         capture_output=False, env=env,
     )
     if result.returncode == 0:
-        log("第4步完成：pipeline 成功，邮件已发送")
-        os.remove(ARTICLES_PATH)
-        log("本轮完成：articles.json 已清理")
+        log("第4步完成：pipeline 成功（图片和 HTML 已生成，等待 git 提交后发信）")
+        # Do NOT remove articles.json yet - workflow needs it for send step
         return 0
     else:
         log(f"第4步失败：pipeline exit code {result.returncode}")

@@ -932,9 +932,10 @@ def send_email(html_content, editor, grouped, subject=None):
 def parse_args(argv):
     use_test_data = "--test-data" in argv
     no_send = "--no-send" in argv
+    send_only = "--send-only" in argv
     json_paths = [arg for arg in argv if not arg.startswith("--")]
     json_path = json_paths[0] if json_paths else None
-    return json_path, use_test_data, no_send
+    return json_path, use_test_data, no_send, send_only
 
 def main():
     print("=" * 56)
@@ -948,7 +949,29 @@ def main():
         return 3
 
     try:
-        json_path, use_test_data, no_send = parse_args(sys.argv[1:])
+        json_path, use_test_data, no_send, send_only = parse_args(sys.argv[1:])
+
+        if send_only:
+            if not os.path.exists(OUTPUT_HTML):
+                print(f"❌ HTML 未找到: {OUTPUT_HTML}"); return 2
+            print(f"\n📧 --send-only: 发送已有 HTML")
+            with open(OUTPUT_HTML) as f: html = f.read()
+            mr = MIMEMultipart("related"); mr.attach(MIMEText(html, "html", "utf-8"))
+            msg = MIMEMultipart("mixed"); msg["From"] = f"pichan <{SMTP_USER}>"
+            msg["To"] = TO_ADDRS[0]
+            if len(TO_ADDRS) > 1: msg["Bcc"] = ", ".join(TO_ADDRS[1:])
+            msg["Subject"] = f"设计资讯摘要 · {DATE_SHORT}"
+            msg.attach(mr)
+            for port in [SMTP_PORT, 587 if SMTP_PORT == 465 else 465]:
+                try:
+                    s = smtplib.SMTP_SSL(SMTP_HOST, port, timeout=SMTP_TIMEOUT_SECONDS) if port == 465 else smtplib.SMTP(SMTP_HOST, port, timeout=SMTP_TIMEOUT_SECONDS)
+                    if port != 465: s.starttls()
+                    s.ehlo(); s.login(SMTP_USER, SMTP_PASS); s.sendmail(SMTP_USER, TO_ADDRS, msg.as_string()); s.quit()
+                    print("  ✅ 邮件发送成功!"); break
+                except Exception as e:
+                    print(f"  ⚠ 端口{port}: {str(e)[:60]}")
+            else: print("  ❌ 全部失败"); return 1
+            print("✅ 完成!"); return 0
 
         # 1. 加载文章
         print("\n📝 加载文章...")
