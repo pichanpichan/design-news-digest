@@ -190,16 +190,22 @@ def translate_articles(candidates):
     if not candidates:
         return []
 
-    # Build prompt with all candidates
-    items_json = []
-    for i, c in enumerate(candidates):
-        items_json.append({
-            "index": i,
-            "title_en": c["title"],
-            "description_en": c["desc"][:300],
-        })
+    BATCH_SIZE = 4  # 4篇/批，每篇约500字输出，总token在DeepSeek输出限制以内
+    results = []
 
-    prompt = f"""以下是从设计网站收集的 {len(candidates)} 篇文章（英文）。请对每篇文章：
+    for batch_start in range(0, len(candidates), BATCH_SIZE):
+        batch = candidates[batch_start:batch_start + BATCH_SIZE]
+        log(f"  翻译批次 {batch_start//BATCH_SIZE + 1}: 文章 {batch_start+1}-{batch_start+len(batch)}")
+
+        items_json = []
+        for j, c in enumerate(batch):
+            items_json.append({
+                "index": batch_start + j,
+                "title_en": c["title"],
+                "description_en": c["desc"][:300] if c.get("desc") else "",
+            })
+
+        prompt = f"""以下是从设计网站收集的 {len(batch)} 篇文章（英文）。请对每篇文章：
 
 1. 翻译标题为中文，保留关键品牌/人名/项目名
 2. 写一句中文摘要（35-70汉字），说明这篇在讲什么、为什么值得关注
@@ -223,22 +229,28 @@ def translate_articles(candidates):
 原文数据：
 {json.dumps(items_json, ensure_ascii=False, indent=2)}"""
 
-    result = call_deepseek(prompt)
-    if not result:
-        log("  ❌ 翻译失败，使用原文标题")
-        return []
+        result = call_deepseek(prompt)
+        if not result:
+            log(f"  ❌ 批次 {batch_start//BATCH_SIZE + 1} 翻译失败")
+            continue
 
-    try:
-        parsed = json_try_parse(result)
-        if parsed is None:
-            log(f"  ❌ 翻译结果解析失败，尝试修复后仍失败")
-            return []
-        translated = parsed.get("articles", [])
-        log(f"  ✓ DeepSeek 翻译完成: {len(translated)} 篇")
-        return translated
-    except Exception as e:
-        log(f"  ❌ 翻译处理异常: {e}")
-        return []
+        try:
+            parsed = json_try_parse(result)
+            if parsed is None:
+                log(f"  ❌ 批次 {batch_start//BATCH_SIZE + 1} 解析失败")
+                continue
+            translated = parsed.get("articles", [])
+            results.extend(translated)
+            log(f"  ✓ 批次 {batch_start//BATCH_SIZE + 1} 完成: {len(translated)} 篇")
+        except Exception as e:
+            log(f"  ❌ 批次 {batch_start//BATCH_SIZE + 1} 异常: {e}")
+            continue
+
+    if results:
+        log(f"  ✓ DeepSeek 翻译完成: {len(results)} 篇")
+    else:
+        log("  ❌ 所有批次的翻译均失败")
+    return results
 
 # ── 主流程 ──
 def main():
