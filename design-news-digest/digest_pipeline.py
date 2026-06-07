@@ -90,7 +90,7 @@ MAX_OG_WORKERS = int(os.environ.get("DESIGN_DIGEST_MAX_OG_WORKERS", "4"))
 MAX_IMAGE_WORKERS = int(os.environ.get("DESIGN_DIGEST_MAX_IMAGE_WORKERS", "4"))
 PAGE_TIMEOUT_SECONDS = int(os.environ.get("DESIGN_DIGEST_PAGE_TIMEOUT_SECONDS", "6"))
 IMAGE_TIMEOUT_SECONDS = int(os.environ.get("DESIGN_DIGEST_IMAGE_TIMEOUT_SECONDS", "8"))
-SMTP_TIMEOUT_SECONDS = int(os.environ.get("DESIGN_DIGEST_SMTP_TIMEOUT_SECONDS", "20"))
+SMTP_TIMEOUT_SECONDS = int(os.environ.get("DESIGN_DIGEST_SMTP_TIMEOUT_SECONDS", "30"))
 LOCK_STALE_SECONDS = int(os.environ.get("DESIGN_DIGEST_LOCK_STALE_SECONDS", str(30 * 60)))
 MAX_IMAGE_BYTES = int(os.environ.get("DESIGN_DIGEST_MAX_IMAGE_BYTES", str(8 * 1024 * 1024)))
 
@@ -892,13 +892,26 @@ def send_email(html_content, editor, grouped, subject=None):
     msg.attach(msg_related)
 
     print(f"  📧 发送: {attached} 张 CID 图片, {len(all_arts)} 篇文章")
-    server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS)
-    try:
-        server.login(SMTP_USER, SMTP_PASS)
-        server.sendmail(SMTP_USER, TO_ADDRS, msg.as_string())
-    finally:
-        server.quit()
-    print("  ✅ 邮件发送成功!")
+    # Try port 465 (SSL) first, fall back to 587 (STARTTLS)
+    for port, use_ssl in [(465, True), (587, False)]:
+        try:
+            if use_ssl:
+                server = smtplib.SMTP_SSL(SMTP_HOST, port, timeout=SMTP_TIMEOUT_SECONDS)
+            else:
+                server = smtplib.SMTP(SMTP_HOST, port, timeout=SMTP_TIMEOUT_SECONDS)
+                server.starttls()
+            server.ehlo()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.sendmail(SMTP_USER, TO_ADDRS, msg.as_string())
+            server.quit()
+            print("  ✅ 邮件发送成功!")
+            break
+        except (smtplib.SMTPException, OSError, ssl.SSLError, TimeoutError) as e:
+            port_label = f"端口{port} (SSL)" if use_ssl else f"端口{port} (STARTTLS)"
+            print(f"  ⚠ {port_label} 失败: {str(e)[:80]}")
+            if port == 587:
+                print(f"  ❌ 所有 SMTP 方式均失败")
+                raise
 
 # ═══════════════════ 8. 主流程 ═══════════════════
 
