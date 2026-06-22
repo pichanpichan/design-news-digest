@@ -1,242 +1,226 @@
 ---
 name: design-news-digest
-description: 每3天从设计网站收集最新资讯，筛选成中文设计摘要，并生成参考 QQ 邮箱视觉的 HTML 邮件
+description: 每3天从设计网站自动收集最新资讯，DeepSeek翻译成中文摘要，通过GitHub Actions生成并发送HTML邮件
 ---
 
 # 设计资讯摘要推送任务
 
-## 目标
-每 3 天自动从指定设计网站收集最新文章，筛选 8-12 篇真正值得看的内容，提取真实封面图，写成中文摘要，并用 `digest_pipeline.py` 生成一封参考「QQ邮箱.pdf」样式的 HTML 邮件，发送到 `isawuonce@qq.com`。
+## 架构
 
-核心结果不是”抓得多”，而是：主题新、图片真实、摘要能帮我快速判断是否要点开原文。
+```
+GitHub Actions (每3天 9:00 CST)
+  └─ discover_and_translate.py
+       ├─ RSS 抓取：Hypebeast / Creative Boom / Dribbble
+       ├─ HTML 抓取：It's Nice That
+       ├─ DeepSeek 翻译（逐篇API）：中文标题 + 摘要 + 摘录
+       └─ digest_pipeline.py --no-send → 生成 HTML + images/
+  └─ git push images/ → GitHub (公开仓库 raw URL)
+  └─ digest_pipeline.py --send-only → Gmail SMTP → 收件人
+```
+
+**仓库**: https://github.com/pichanpichan/design-news-digest（公开）
+**发信方式**: Gmail SMTP (587 STARTTLS)，图片用 `raw.githubusercontent.com` 公开URL
+**收件人**: `isawuonce@qq.com`, `isawuonce@gmail.com`
 
 ---
 
-## 日志
+## 文件结构
 
-日志文件路径：
-```text
-/Users/pichan/Documents/Claude/Scheduled/design-news-digest/discovery.log
-```
+| 文件 | 作用 |
+|---|---|
+| `discover_and_translate.py` | 入口脚本：RSS发现 → DeepSeek翻译 → 保存articles.json → 调用pipeline(--no-send) |
+| `digest_pipeline.py` | 核心管道：图片下载→裁切→保存文件+base64缓存→生成HTML→SMTP发送 |
+| `.github/workflows/digest.yml` | GitHub Actions 工作流定义（三步：生成→推送→发送） |
+| `articles.json` | 精选结果（临时文件，生成后提交给pipeline） |
+| `img_cache.json` | 图片 base64 缓存（持久化，避免重复下载） |
+| `img_failures.json` | 失败图片记录（冷却机制防重复请求） |
+| `images/` | 裁切后的 JPEG 文件（git 管理，通过 raw URL 公开访问） |
+| `SKILL.md` | 本文件（任务说明文档） |
+| `design_digest_latest.html` | 本次邮件HTML（每次覆盖） |
+| `design_digest_reader.html` | 交互式阅读页面（每次覆盖，含内嵌base64图片） |
 
-每条日志的命令格式：
+---
+
+## GitHub Actions 工作流
+
+`.github/workflows/digest.yml` 分三步执行：
+
+### ① 发现 + 翻译 + 生成（不发送）
+- `discover_and_translate.py` 运行：
+  - RSS 抓取 3 个站点（Hypebeast Design, Creative Boom, Dribbble Stories）
+  - HTML 抓取 It's Nice That 文章列表页
+  - 过滤：去重、去低质图片、限制每站最多 6 篇
+  - DeepSeek API 逐篇翻译（每篇单独调 API，避免 JSON 截断）
+    - 翻译标题为中文
+    - 写 35-70 字摘要
+    - 写 200-500 字摘录
+  - 分类、选题去重、精选 8-12 篇
+  - 调用 `digest_pipeline.py articles.json --no-send`
+    - 下载未缓存图片 → 居中裁切 600×400 → JPEG q75
+    - 保存 `images/{article_id}.jpg` 文件
+    - 更新 `img_cache.json` / `img_failures.json`
+    - 生成 `design_digest_latest.html`（邮件HTML，图片引用 `raw.githubusercontent.com` URL）
+    - 生成 `design_digest_reader.html`（交互阅读页，内嵌 base64 图片）
+  - 不发送邮件（`--no-send`）
+
+### ② 推送图片到公开仓库
+- `git add images/ img_cache.json img_failures.json && git push`
+- 确保新图片通过 `raw.githubusercontent.com` 可用
+
+### ③ 发送邮件
+- `digest_pipeline.py --send-only`：
+  - 读取刚刚生成的 `design_digest_latest.html`
+  - 通过 Gmail SMTP (587 STARTTLS) 发送
+  - 图片已在上一步推送到 GitHub，可在线加载
+
+---
+
+## 运行方式
+
+### 自动触发
+每 3 天 9:00 CST（cron: `0 1 */3 * *` UTC）
+
+### 手动触发
+去 https://github.com/pichanpichan/design-news-digest/actions → 点「Run workflow」
+
+### 本地测试（需要 API Key）
 ```bash
-echo “[$(date '+%Y-%m-%d %H:%M:%S')] 消息内容” >> /Users/pichan/Documents/Claude/Scheduled/design-news-digest/discovery.log
-```
-
-本轮开始前先初始化日志：
-```bash
-echo “[$(date '+%Y-%m-%d %H:%M:%S')] === 本轮开始 ===” > /Users/pichan/Documents/Claude/Scheduled/design-news-digest/discovery.log
+DEEPSEEK_API_KEY="sk-xxx" \
+DESIGN_DIGEST_TO_ADDRS="isawuonce@qq.com" \
+DESIGN_DIGEST_SMTP_PASS="xxx" \
+DESIGN_DIGEST_SMTP_HOST="smtp.gmail.com" \
+DESIGN_DIGEST_SMTP_PORT=587 \
+DESIGN_DIGEST_SMTP_USER="isawuonce@gmail.com" \
+python3 discover_and_translate.py
 ```
 
 ---
 
-## 0. 先判断是否已有候选文章
+## 发现阶段细节
 
-检查：
-```bash
-test -f /Users/pichan/Documents/Claude/Scheduled/design-news-digest/articles.json && echo exists || echo missing
-```
+### RSS 源
+| 网站 | Feed URL |
+|---|---|
+| Hypebeast Design | `https://hypebeast.com/design/feed` |
+| Creative Boom | `https://www.creativeboom.com/feed/` |
+| Dribbble Stories | `https://dribbble.com/stories.rss` |
 
-- 如果输出 `exists`：用 Python 检查文件是否是当天生成的，排除旧批次残留：
-  ```python
-  import os, time
-  mtime = os.path.getmtime(“/Users/pichan/Documents/Claude/Scheduled/design-news-digest/articles.json”)
-  age_hours = (time.time() - mtime) / 3600
-  print(“fresh” if age_hours < 4 else “stale”)
-  ```
-  - 如果输出 `fresh`：说明发现阶段刚完成，直接从第 4 步运行 pipeline。发送成功后删除 `articles.json`。
-  - 如果输出 `stale`：说明是旧批次残留，**先删除旧文件**，再进入第 1 步重新收集。
+It's Nice That 无 RSS，通过抓取 `/articles` 列表页提取链接。
 
-- 如果输出 `missing`：从第 1 步开始收集。
+### 详情页元数据提取
+- 优先 `og:title`、`og:description`、`og:image`
+- 必须去除 tracking 参数（`&cbr=1` 等），否则 Hypebeast 图片返回 404
+- 排除默认图（`social.jpg`、placeholder 等）
 
 ---
 
-## 第1步：扫描网站发现文章
+## DeepSeek 翻译
 
-log "第1步开始：扫描网站"
-
-### 目标网站
-
-| 网站 | 抓取 URL | 文章链接特征 | 备注 |
-|---|---|---|---|
-| Hypebeast Design | `https://hypebeast.com/design` | `/{yyyy}/{mm}/...` | 优先设计、空间、品牌、产品、文化内容 |
-| It’s Nice That | `https://www.itsnicethat.com/` | `/articles/...` | 优先视觉、摄影、插画、平面与创意项目 |
-| Creative Boom | `https://www.creativeboom.com/` | `/inspiration/`、`/insight/`、`/news/` | 优先设计趋势、案例、行业观察 |
-| Dribbble Stories | `https://dribbble.com/stories` | `/stories/...` 或资源文章 | 优先设计系统、品牌、UI/UX、视觉趋势 |
-| Behance | WebSearch：`Behance featured projects {current_year}` | `behance.net/gallery/...` | 只取精选项目或趋势项目 |
-
-### 抓取规则
-
-1. 每个站点只做一次首页/列表页抓取，提取 3-5 个候选链接，总候选不超过 20 篇。
-2. 详情页只抓必要元数据：标题、摘要、封面图、发布时间、来源。
-3. 优先使用 `og:title`、`og:description`、`og:image`；如果 Hypebeast 图链含 HTML 实体，必须 `html.unescape()`。
-4. 如果没有真实图片、图片是站点默认 `social.jpg`、图片 404、或文章内容明显和设计无关，直接排除。
-5. URL 去重；同一选题重复时保留来源更权威、图片更好、摘要信息更完整的一篇。
-
-抓取完成后立即记录结果：
-```bash
-log "第1步完成：抓取了 X 个网站，共 Y 篇候选"
-```
-（把 X 和 Y 替换为实际数值。）
+- **模型**: `deepseek-chat`
+- **模式**: 逐篇调用（每篇文章单独调一次 API）
+- **温度**: 0.3
+- **输出**: 中文标题 + 35-70字摘要 + 200-500字摘录
+- **质量要求**：
+  - 保留关键品牌/人名/项目名
+  - 摘录要有观点和判断，展开介绍核心观点和设计亮点
+  - 不要以「值得一看」「不容错过」等套路句式结尾
+  - 翻译失败时自动降级为英文原题，不影响其他文章
+- **费用**: ≈ ¥0.02/月
 
 ---
 
-## 第2步：翻译、分类、精选
+## 精选规则
 
-log "第2步开始：翻译与精选"
+1. 最终保留 8-12 篇
+2. 每个来源最多 5 篇
+3. 同一分类中，同一细分领域最多 2 篇
+4. **选题去重**：同一期内核心选题明显的文章只保留一篇
+5. 至少 3 个不同来源
+6. 选择 1 篇 Editor's Pick：图片强、设计判断价值高
 
 ### 分类
 
-- **设计理论**：趋势、方法论、排版、UX/UI、设计系统、设计行业观察
-- **视觉参考**：插画、摄影、3D、动画、平面设计、空间/产品视觉
-- **AIGC**：AI 设计工具、生成式视觉、创作流程变化
-- **创意文化**：艺术家、展览、设计节、文化评论、创意社群
-- **商业与品牌**：品牌设计、营销创意、包装、联名、零售体验
+| 分类 | 邮件胶囊色 |
+|---|---|
+| 设计理论 | `#4f6fd9` 蓝色 |
+| 视觉参考 | `#1fa6a0` 青绿 |
+| AIGC | `#7b61ff` 紫色 |
+| 创意文化 | `#f08a24` 橙色 |
+| 商业与品牌 | `#e8507f` 粉色 |
 
-### 精选规则
+---
 
-1. 最终保留 8-12 篇。
-2. 每个来源最多 5 篇。
-3. 同一分类中，同一细分领域最多 2 篇。
-4. **选题去重**：同一期里，如果两篇文章的核心选题明显相同（如同为"2026 趋势"、"年度报告"、"春节营销"等），只保留更优的那一篇，不要并排放同一选题的两篇。
-5. 至少保留 3 个不同来源；如果候选不足，优先降低单站数量而不是硬凑低质文章。
-5. 每篇摘要写 1 句中文，控制在 35-70 个汉字，说明这篇在讲什么、为何值得关注，不要写成泛泛的新闻翻译。
-6. 每篇还要写一段较长的摘录 excerpt_cn，200-500 字，展开介绍这篇文章讲了什么、有什么设计判断价值，不要直接翻译原文，而是用你自己的话讲清楚核心观点和设计亮点。摘录要有观点和判断，不要以「值得一看」「不容错过」等套路句式结尾。
-7. 标题可以意译，但必须保留关键品牌、人名、项目名或展览名。
-8. 选择 1 篇 Editor’s Pick：优先图片强、设计判断价值高、适合作为邮件第一张大图的文章。
+## 图片处理
 
-精选完成后记录结果：
+- 统一居中裁切为 600×400（3:2 比例）
+- JPEG quality 75, optimize=True
+- 同时保存两份：
+  - `img_cache.json`：base64 字符串（用于 reader 页面和 CID 回退）
+  - `images/{article_id}.jpg`：文件（通过 git push 到 GitHub，供邮件使用）
+- 图片通过 `raw.githubusercontent.com` 公开 URL 引用，无需 CID 附件
+
+---
+
+## 邮件 UI 参考
+- 参考 `QQ邮箱.pdf` 风格
+- 浅灰背景、居中、宽度 720px
+- 单栏白底卡片：大图 + 分类胶囊 + 黑色标题 + 灰色摘要 + 摘录 + 来源
+- 移动端保持单栏，内边距 14-16px
+- 无图文章不展示
+
+---
+
+## 故障排查
+
+### GitHub Actions 失败
+1. 去 https://github.com/pichanpichan/design-news-digest/actions 查看最新运行
+2. 常见失败原因：
+   - **图片 404**：检查 `images/` 目录是否有对应文件
+   - **翻译失败**：检查 DeepSeek API 余额
+   - **SMTP 失败**：检查 Gmail App Password 是否过期
+3. 点击「Re-run jobs」即可重试
+
+### 本地调试
 ```bash
-log "第2步完成：精选了 N 篇，Editor’s Pick: 文章ID"
+# 只生成 HTML，不发送
+python3 digest_pipeline.py articles.json --no-send
+
+# 只发送已有 HTML
+python3 digest_pipeline.py --send-only
+
+# 指定日期（覆盖环境内系统时间）
+DESIGN_DIGEST_NOW=2026-05-24 python3 digest_pipeline.py articles.json
 ```
 
 ---
 
-## 第3步：保存 articles.json
+## 配置项（环境变量）
 
-log "第3步：保存 articles.json"
-
-写入覆盖：
-```text
-/Users/pichan/Documents/Claude/Scheduled/design-news-digest/articles.json
-```
-
-JSON 格式：
-```json
-[
-  {
-    "id": "source_slug_unique",
-    "title_cn": "中文标题",
-    "summary_cn": "中文摘要（35-70字，邮件卡片用）",
-    "excerpt_cn": "中文摘录（200-500字，二级详情页用）",
-    "url": "原文链接",
-    "source": "来源名称",
-    "category": "设计理论",
-    "og_image": "真实封面图片URL"
-  }
-]
-```
-
-字段要求：
-- `id` 只用小写英文、数字、下划线，且全局唯一；它会被用作 CID 图片 ID。
-- `og_image` 必须尽量写入；pipeline 有后备抓取，但自动任务里不要依赖后备。
-- 不要把无图文章写入 JSON。
-- 不要写占位图、站点 logo、追踪参数图或明显错误的图片。
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `DEEPSEEK_API_KEY` | — | DeepSeek API Key（必填） |
+| `DESIGN_DIGEST_SMTP_HOST` | `smtp.qq.com` | SMTP 服务器 |
+| `DESIGN_DIGEST_SMTP_PORT` | `465` | SMTP 端口 |
+| `DESIGN_DIGEST_SMTP_USER` | `isawuonce@qq.com` | SMTP 用户名 |
+| `DESIGN_DIGEST_SMTP_PASS` | — | SMTP 密码/授权码 |
+| `DESIGN_DIGEST_TO_ADDRS` | SMTP_USER | 收件人（逗号分隔） |
+| `DESIGN_DIGEST_IMAGE_BASE_URL` | `""` | 图片公开 URL 前缀（GHA 中设为 raw.githubusercontent.com） |
+| `DESIGN_DIGEST_NOW` | 系统日期 | 覆盖日期 |
 
 ---
 
-## 第4步：运行 pipeline
+## GitHub Secrets
 
-log "第4步开始：运行 pipeline ($(wc -c < /Users/pichan/Documents/Claude/Scheduled/design-news-digest/articles.json) bytes)"
-
-只使用现有脚本生成 HTML 和发送邮件，不要临时手写 HTML 或另写发送逻辑。
-
-先确认 Pillow 可用：
-```bash
-python3 -c "import PIL"
-```
-
-如果缺少 Pillow，再安装：
-```bash
-python3 -m pip install Pillow --break-system-packages
-```
-
-运行（注意设置 TZ=Asia/Shanghai 使日期正确）：
-```bash
-TZ=Asia/Shanghai DESIGN_DIGEST_TO_ADDRS="isawuonce@qq.com,isawuonce@gmail.com" python3 /Users/pichan/Documents/Claude/Scheduled/design-news-digest/digest_pipeline.py /Users/pichan/Documents/Claude/Scheduled/design-news-digest/articles.json
-```
-
-如果脚本成功（exit code 0）：
-```bash
-log "第4步完成：pipeline 成功，邮件已发送"
-```
-
-如果脚本因为网络错误失败：最多手动重跑 1 次。第二次仍失败就停止，记录：
-```bash
-log "第4步失败：pipeline 重跑后仍失败"
-```
-不要继续循环执行，也不要重新生成同一批候选文章。脚本会用 `img_cache.json` 复用成功图片，并用 `img_failures.json` 记录失败图片，避免反复打同一个失败链接。
-
-如只想检查 HTML，不发送邮件：
-```bash
-python3 /Users/pichan/Documents/Claude/Scheduled/design-news-digest/digest_pipeline.py /Users/pichan/Documents/Claude/Scheduled/design-news-digest/articles.json --no-send
-```
-
-如只想生成临时预览、不覆盖 `design_digest_latest.html`：
-```bash
-DESIGN_DIGEST_OUTPUT_HTML=/private/tmp/design_digest_preview.html python3 /Users/pichan/Documents/Claude/Scheduled/design-news-digest/digest_pipeline.py /Users/pichan/Documents/Claude/Scheduled/design-news-digest/articles.json --no-send
-```
-
-发送成功后清理：
-```bash
-rm -f /Users/pichan/Documents/Claude/Scheduled/design-news-digest/articles.json
-log "本轮完成：articles.json 已清理"
-```
+仓库中加密存储的凭证（不会出现在任何日志或代码中）：
+- `DEEPSEEK_API_KEY` — DeepSeek API Key
+- `SMTP_PASS` — Gmail App Password
+- `DESIGN_DIGEST_TO_ADDRS` — 收件人列表
 
 ---
 
-## UI 设计参考
-
-邮件 HTML 参考桌面文件：
-```text
-/Users/pichan/Desktop/QQ邮箱.pdf
-```
-
-视觉方向：
-- QQ 邮箱内阅读效果优先：浅灰背景、内容居中、主内容宽度约 720px。
-- 顶部是居中标题：`设计资讯摘要`，下一行显示日期与精选篇数，再下一行显示“每 3 天 · 从 5 个设计网站为你筛选”。
-- 主推荐和普通文章都用单栏白底卡片：顶部大图，下方是分类胶囊、黑色标题、灰色摘要、浅灰来源。
-- 分类胶囊使用固定栏目色，不要全部用粉色：设计理论蓝色、视觉参考青绿色、AIGC 紫色、创意文化橙色、商业与品牌粉色；未知分类用中性灰。
-- 不再使用旧版 OOO 风格的细字母 header、双栏网格和黑框按钮。
-- 移动端保持单栏，卡片贴近屏幕但保留 14-16px 内边距。
-- 无图文章不展示；不要出现空白图块或占位块。
-
----
-
-## 质量检查
-
-发送前确认：
-1. `design_digest_latest.html`（邮件 HTML）已生成。
-2. `design_digest_reader.html`（交互式阅读页面）已生成。
-3. 页面里没有 `social.jpg`、`placeholder`、空 `cid:` 或空标题。
-4. 文章数在 8-12 篇；如果不足，邮件仍可发送，但不要为了凑数加入低质内容。
-5. 至少 3 个来源；如果不足，在摘要中不要伪装来源覆盖面。
-6. 生成的邮件主题为 `设计资讯摘要 · MM/DD · 精选 N 篇`。
-7. 每篇文章都应有 `excerpt_cn` 字段（200-500 字），用于详情页展示。
-8. SMTP 授权码不要写入新笔记、报告或日志；脚本内部处理发送。
-9. 如果日志显示已有运行锁、失败冷却、文章数低于下限或 SMTP 网络失败，停止本轮任务并报告原因，不要在同一次自动化里反复运行。
-
----
-
-## 技术说明
-
-- HTML 图片用 `<img src="cid:article_id">`，图片作为 MIME inline 附件。
-- 图片统一居中裁切为 600×400，保证邮件卡片稳定。
-- `img_cache.json` 是持久缓存，避免每次重复下载图片。
-- `img_failures.json` 会记录失败图片，失败达到上限后进入冷却期，防止网络错误被放大成大量重复请求。
-- `.digest_pipeline.lock` 防止上一轮还没结束时又启动下一轮。
-- `design_digest_latest.html` 是本次邮件的可检查版本。
-- `design_digest_reader.html` 是交互式阅读页面，每篇文章可点击查看完整摘录（excerpt_cn）并返回列表，也可在浏览器直接打开。
-- SMTP 使用 QQ 邮箱 SSL 发送；如果后续迁移机器，优先用环境变量配置邮箱账号和授权码。
-- `DESIGN_DIGEST_TO_ADDRS` 环境变量可设置多个收件人，用逗号分隔（默认发给 `isawuonce@qq.com`）。如需增加订阅邮箱，在定时任务配置中追加即可，例如 `DESIGN_DIGEST_TO_ADDRS=isawuonce@qq.com,newuser@qq.com`。
+## 注意事项
+- 仓库是**公开**的，raw.githubusercontent.com URL 才能被邮件客户端加载
+- Gmail SMTP 需要 App Password（不是登录密码）
+- 图片文件太大时（单文件 >50MB）GitHub 会拒绝 push，当前每张约 20-40KB
+- 每 3 天跑一次，每次约 1-2 分钟
+- 定时任务错过不补跑，但可手动触发 workflow_dispatch

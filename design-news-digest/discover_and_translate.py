@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ARTICLES_PATH = os.path.join(SCRIPT_DIR, "articles.json")
 LOG_PATH = os.path.join(SCRIPT_DIR, "discovery.log")
+HISTORY_PATH = os.path.join(SCRIPT_DIR, "sent_urls.json")
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_MODEL = "deepseek-chat"
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
@@ -356,6 +357,14 @@ def main():
             })
 
     # ── 4. 精选 ──
+    # 跨期去重：排除已经发过的文章
+    history = load_sent_urls()
+    before = len(results)
+    results = [r for r in results if r["url"] not in history]
+    skipped = before - len(results)
+    if skipped:
+        log(f"  跨期去重：跳过 {skipped} 篇已发过的文章")
+
     # Dedup by topic
     deduped = deduplicate_by_topic(results)
 
@@ -389,11 +398,37 @@ def main():
     )
     if result.returncode == 0:
         log("第4步完成：pipeline 成功（图片和 HTML 已生成，等待 git 提交后发信）")
+        # 记录已发文章 URL 到历史，避免下期重复
+        save_sent_urls([a["url"] for a in final])
         # Do NOT remove articles.json yet - workflow needs it for send step
         return 0
     else:
         log(f"第4步失败：pipeline exit code {result.returncode}")
         return 1
+
+# ── 跨期去重 ──
+
+def load_sent_urls():
+    """Load history of already-sent article URLs."""
+    if not os.path.exists(HISTORY_PATH):
+        return set()
+    try:
+        with open(HISTORY_PATH, "r") as f:
+            data = json.load(f)
+        return set(data) if isinstance(data, list) else set()
+    except Exception:
+        return set()
+
+def save_sent_urls(new_urls):
+    """Append new URLs to the sent history."""
+    existing = load_sent_urls()
+    existing.update(new_urls)
+    try:
+        with open(HISTORY_PATH, "w") as f:
+            json.dump(sorted(existing), f, ensure_ascii=False)
+        log(f"  历史已更新：共 {len(existing)} 条 URL 记录")
+    except Exception as e:
+        log(f"  ⚠ 保存历史失败: {e}")
 
 # ── 辅助函数 ──
 def guess_category(title, desc=""):
