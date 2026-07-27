@@ -459,7 +459,7 @@ def filter_and_enrich(articles, img_cache):
     for a in valid:
         src = a["source"]
         source_count.setdefault(src, 0)
-        if source_count[src] < 5:
+        if source_count[src] < 7:
             filtered.append(a)
             source_count[src] += 1
 
@@ -469,7 +469,7 @@ def filter_and_enrich(articles, img_cache):
     for a in filtered:
         key = (a.get("category", ""), a["source"])
         cat_src_count.setdefault(key, 0)
-        if cat_src_count[key] < 2:
+        if cat_src_count[key] < 4:
             result.append(a)
             cat_src_count[key] += 1
 
