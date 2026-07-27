@@ -150,14 +150,13 @@ def call_deepseek(prompt, max_tokens=8192):
         log("  ❌ DEEPSEEK_API_KEY 未设置")
         return None
     data = json.dumps({
-        "model": DEEPSEEK_MODEL,
+        "model": "deepseek-chat",
         "messages": [
-            {"role": "system", "content": "你是一个专业的设计编辑，擅长用中文撰写设计文章摘要和评论。文章解读有观点、有判断，不写空洞的推荐语。禁止使用「值得一看」「不容错过」等套路句式。输出必须严格使用JSON格式。"},
+            {"role": "system", "content": "你是一个专业的设计编辑，擅长用中文撰写设计文章摘要和评论。文章解读有观点、有判断，不写空洞的推荐语。禁止使用「值得一看」「不容错过」等套路句式。必须返回纯JSON，不要markdown包裹。"},
             {"role": "user", "content": prompt}
         ],
         "max_tokens": max_tokens,
         "temperature": 0.3,
-        "response_format": {"type": "json_object"},
     }).encode()
     req = Request(DEEPSEEK_URL, data=data, headers={
         "Content-Type": "application/json",
