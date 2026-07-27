@@ -26,7 +26,7 @@ DEEPSEEK_MODEL = "deepseek-chat"
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 
 MAX_CANDIDATES = 20
-MAX_PER_SOURCE = 6
+MAX_PER_SOURCE = 8
 
 # ── 日志 ──
 def log(msg):
@@ -258,11 +258,11 @@ def main():
     ]
     for name, url, parser in rss_configs:
         entries = parser(url, name)
-        all_candidates.extend(entries[:6])
+        all_candidates.extend(entries[:8])
 
     # HTML scraping for It's Nice That
     itsnicethat = scrape_itsnicethat()
-    all_candidates.extend(itsnicethat[:6])
+    all_candidates.extend(itsnicethat[:8])
 
     log(f"第1步完成：共 {len(all_candidates)} 篇候选")
 
@@ -465,36 +465,31 @@ def deduplicate_by_topic(articles):
     return result
 
 def select_final(articles):
-    """Select 8-12 articles, at least 3 sources, max 5 per source."""
+    """Select 10-12 articles, at least 3 sources, max 6 per source."""
     if len(articles) <= 12:
         return articles
 
-    # First pass: ensure 3+ sources
-    sources = set(a["source"] for a in articles)
-    if len(sources) < 3:
-        # Already a coverage issue, just return top 12
-        return articles[:12]
-
-    # Limit per source
+    # Limit per source (max 6)
     sc = {}
     result = []
     for a in articles:
         s = sc.get(a["source"], 0)
-        if s < 5:
+        if s < 6:
             result.append(a)
             sc[a["source"]] = s + 1
 
-    # If still > 12, trim to 12 (keep diversity)
+    # Ensure at least 10
+    if len(result) < 10:
+        return result
+
+    # If still > 12, trim to 12
     if len(result) > 12:
-        # Keep at least 2 per source, then trim
         groups = {}
         for a in result:
             groups.setdefault(a["source"], []).append(a)
         final = []
-        # Take 2 from each source
         for src, items in groups.items():
             final.extend(items[:2])
-        # Fill remaining up to 12
         remaining = []
         for src, items in groups.items():
             remaining.extend(items[2:])
