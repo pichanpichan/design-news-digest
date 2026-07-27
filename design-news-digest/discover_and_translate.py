@@ -419,13 +419,15 @@ def load_sent_urls():
         return set()
 
 def save_sent_urls(new_urls):
-    """Append new URLs to the sent history."""
+    """Append new URLs to the sent history, keep only last 100 to allow fresh articles in."""
     existing = load_sent_urls()
     existing.update(new_urls)
+    # Keep only most recent 100 to avoid exhausting all candidates
+    trimmed = sorted(existing)[-100:]
     try:
         with open(HISTORY_PATH, "w") as f:
-            json.dump(sorted(existing), f, ensure_ascii=False)
-        log(f"  历史已更新：共 {len(existing)} 条 URL 记录")
+            json.dump(trimmed, f, ensure_ascii=False)
+        log(f"  历史已更新：{len(trimmed)} 条（裁剪前 {len(existing)} 条）")
     except Exception as e:
         log(f"  ⚠ 保存历史失败: {e}")
 
