@@ -44,13 +44,13 @@ jobs:
         run: |
           git config user.name "digest-bot"
           git config user.email "bot@localhost"
-          git add images/ img_cache.json img_failures.json sent_urls.json
+          git add images/ img_cache.json img_failures.json
           git diff --cached --quiet || {
             git commit -m "auto: update images $(date +%Y-%m-%d)"
             git push
           }
 
-      - name: ③ 发送邮件（图片已在线）
+      - name: ③ 等待CDN + 发送邮件（图片已在线）
         working-directory: ./design-news-digest
         env:
           DESIGN_DIGEST_SMTP_PASS: ${{ secrets.SMTP_PASS }}
@@ -59,4 +59,6 @@ jobs:
           DESIGN_DIGEST_SMTP_USER: isawuonce@gmail.com
           DESIGN_DIGEST_TO_ADDRS: ${{ secrets.DESIGN_DIGEST_TO_ADDRS || 'isawuonce@qq.com,isawuonce@gmail.com' }}
         run: |
+          echo "等待30秒让CDN传播..."
+          sleep 30
           python3 digest_pipeline.py --send-only
